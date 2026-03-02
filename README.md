@@ -1,145 +1,141 @@
-# Frontend — Deep Research Agent UI
+# Deep Research Agent — Frontend
 
-React + Vite single-page application for streaming chat and deep research workflows.
-
----
-
-## Features
-
-### Chat mode
-- Streaming assistant responses via `/chat/stream`.
-- Tool activity events displayed inside the assistant message (expandable).
-
-### Research mode
-- **Pre-research clarification dialog** — if the backend detects an ambiguous query, a modal shows 1–2 clarifying questions before research starts. User can answer or skip.
-- **Depth selector** — `shallow`, `standard`, or `deep`.
-- **Advanced options panel** — expandable toggle reveals an iterations slider (1–5).
-- **Research plan preview card** — planned search queries are displayed before the search phase, so the user can see exactly what will be searched.
-- **Animated research timeline** — 16 stages tracked in a side panel.
-- **Source cards with credibility badges** — color-coded percentage badges per source (green ≥80%, amber ≥60%, red <60%).
-- **Uncertainty gauge** — visual confidence bar shown after the verify stage.
-- **Verifier notes** — collapsible section showing the verifier's textual assessment.
-- **Evaluation score chips** — coverage / evidence / clarity scored /5.
-- **Warning events** — non-fatal stage failures surfaced inline in the progress list.
-- **Transparency panel** — queries, sources with credibility, verifier notes.
-- **Report export** — Download `.md` and Copy to clipboard buttons appear after the report completes.
-- **Research history** — History button opens a panel of past runs for the current session; click any run to restore the report.
-- Markdown rendering via `react-markdown`.
+A React + Vite single-page application that provides a streaming chat interface and a full deep research workflow powered by a FastAPI backend.
 
 ---
 
-## Tech Stack
+## Prerequisites
 
-- React 19 + TypeScript
-- Vite 7
-- CSS (custom serif theme — no external component library)
+Before you begin, make sure you have the following installed:
+
+| Tool | Minimum Version | Check |
+|------|----------------|-------|
+| Node.js | 18+ | `node -v` |
+| npm | 9+ | `npm -v` |
+| Docker | 24+ | `docker -v` *(only needed for Docker setup)* |
+
+The frontend talks to the backend at `http://127.0.0.1:8000`. **The backend must be running before you open the UI.** See the backend README for backend setup instructions.
 
 ---
 
-## Setup
+## Quick Start (Local)
 
 ```bash
+# 1. Install dependencies
 npm install
-npm run dev     # dev server at http://localhost:5173
-npm run build   # production build (tsc + vite)
-npm run lint    # ESLint
-npm run preview # preview production build
+
+# 2. Start the development server
+npm run dev
 ```
+
+Open your browser at **http://localhost:5173**.
+
+That's it. The app hot-reloads on every file save.
 
 ---
 
-## Backend Dependency
+## All Available Commands
 
-The UI talks to the backend at:
-
-```
-http://127.0.0.1:8000
-```
-
-If the backend runs elsewhere, update `API_URL` at the top of `src/App.tsx`.
-
----
-
-## UX Flows
-
-### Chat mode
-
-```
-User types message
-  → POST /chat/stream
-  → Streams delta events → renders in assistant bubble
-  → Tool events shown in expandable "Tool activity" section
-```
-
-### Research mode
-
-```
-User types query
-  → POST /research/clarify
-      if questions returned → show clarification dialog
-      user answers/skips
-  → POST /research/stream (with query + depth + max_iterations)
-      status/plan_preview  → shows "Research Plan" card with planned queries
-      status/sources       → renders source cards with credibility badges
-      status/verify        → shows uncertainty gauge + verifier notes
-      delta                → streams tokens into assistant bubble
-      status/transparency  → shows transparency panel with evaluation chips
-      [DONE]               → shows export bar (Download .md + Copy to clipboard)
-```
-
-### History
-
-```
-Click "History" button in header
-  → GET /research/history?session_id=...
-  → Panel lists past runs
-  → Click a run
-      → GET /research/{run_id}
-      → Restores report in message bubble
-```
+| Command | What it does |
+|---------|-------------|
+| `npm install` | Install all dependencies |
+| `npm run dev` | Start dev server at http://localhost:5173 (with hot reload) |
+| `npm run build` | Type-check with TypeScript, then build for production into `dist/` |
+| `npm run preview` | Serve the production build locally for verification |
+| `npm run lint` | Run ESLint across all source files |
 
 ---
 
-## SSE Event Contract (Consumed)
+## Running with Docker
 
-| Event | Payload fields | Rendered as |
-|-------|---------------|-------------|
-| `status` (any stage) | `stage`, `message`, `data` | Progress item in list; active stage highlighted in timeline |
-| `status` (`plan_preview`) | `data.queries` | Plan preview card above source cards |
-| `status` (`sources`) | `data.top_sources[].credibility` | Source cards with credibility badge |
-| `status` (`verify`) | `data.uncertainty`, `data.verifier_notes` | Uncertainty gauge + collapsible notes |
-| `status` (`transparency`) | `data.confidence`, `data.evaluation`, `data.verifier_notes` | Transparency panel, eval chips |
-| `status` (`warning`) | `message` | Amber warning strip in progress list |
-| `delta` | `delta` | Appended to assistant message content |
-| `error` | `error` | Red error bar |
-| `[DONE]` | — | Shows export bar; marks streaming complete |
+A two-stage Docker build compiles the app with Node and serves the result with Nginx.
+
+### Build the image
+
+```bash
+docker build -t deep-research-frontend .
+```
+
+### Run the container
+
+```bash
+docker run -p 3000:80 deep-research-frontend
+```
+
+Open your browser at **http://localhost:3000**.
+
+> **Important:** The app expects the backend at `http://127.0.0.1:8000`. If your backend runs on a different host or port (e.g., inside another Docker container), update `API_URL` at the top of `src/App.tsx` before running `docker build`.
+
+### Run backend and frontend together (docker compose)
+
+If you want to run the frontend alongside a containerized backend, add this service to the backend's `docker-compose.yml`:
+
+```yaml
+frontend:
+  build:
+    context: ../deep_research_frontend
+  ports:
+    - "3000:80"
+  depends_on:
+    - backend
+```
+
+Then update `API_URL` in `src/App.tsx` to point to the backend service name (e.g., `http://backend:8000`).
 
 ---
 
-## Component Overview
+## Changing the Backend URL
 
-All logic lives in `src/App.tsx` (single-component architecture):
+The backend URL is defined in one place:
 
-| State | Purpose |
-|-------|---------|
-| `messages` | Chat/research message history |
-| `progressEvents` | All SSE status events for progress panel |
-| `activeStage` | Currently active pipeline stage |
-| `planPreview` | Planned queries from `plan_preview` event |
-| `clarifyQuestions` / `clarifyAnswer` / `clarifyPending` | Clarification dialog state |
-| `maxIterations` / `showAdvanced` | Advanced options |
-| `reportText` / `reportDone` | Accumulated report for export |
-| `historyRuns` / `historyOpen` | History panel state |
+```
+src/App.tsx  →  line 38  →  const API_URL = 'http://127.0.0.1:8000'
+```
+
+Edit that value to point to wherever your backend is running, then restart the dev server (or rebuild the Docker image).
 
 ---
 
-## File Overview
+## What the App Does
 
-| File | Purpose |
-|------|---------|
-| `src/App.tsx` | All component logic, SSE parsing, UX flows |
-| `src/App.css` | Theme, layout, all component styles |
-| `src/index.css` | Global resets and font imports |
+### Chat Mode
+
+Type a message and get a streaming response, token by token. Any tools the assistant runs are displayed in an expandable **Tool activity** panel below the response.
+
+### Research Mode
+
+Submit a research topic and the backend runs a full multi-agent pipeline. The UI shows:
+
+- **Clarification dialog** — If the query is ambiguous, a modal appears with 1–2 clarifying questions. You can answer or skip.
+- **Depth selector** — Choose `Shallow` (~400–700 words), `Standard` (~700–1200 words), or `Deep` (~1200–1800 words).
+- **Advanced options** — Click *Advanced* to reveal an iterations slider (1–5).
+- **Research plan** — The planned search queries are shown before searching begins.
+- **Live progress timeline** — 16 pipeline stages tracked in a side panel, with the active stage highlighted.
+- **Source cards** — Each source gets a credibility badge (green ≥ 80%, amber ≥ 60%, red < 60%).
+- **Confidence gauge** — A visual bar showing evidence confidence after the verify stage.
+- **Verifier notes** — Collapsible section with the verifier agent's assessment.
+- **Evaluation scores** — Coverage / Evidence / Clarity scored out of 5.
+- **Transparency panel** — Full list of queries run, sources used, and verifier notes.
+- **Export** — After the report finishes, **Download .md** and **Copy to clipboard** buttons appear.
+- **History** — Click *History* in the header to browse past research runs for the current session and restore any report.
+
+---
+
+## Project Structure
+
+```
+deep_research_frontend/
+├── src/
+│   ├── App.tsx       # All component logic, SSE parsing, UX flows
+│   ├── App.css       # Theme, layout, and component styles
+│   ├── index.css     # Global resets and font imports
+│   └── main.tsx      # React entry point
+├── index.html        # HTML shell
+├── vite.config.ts    # Vite configuration
+├── tsconfig.json     # TypeScript configuration
+├── Dockerfile        # Multi-stage Docker build
+└── package.json      # Dependencies and scripts
+```
 
 ---
 
@@ -147,9 +143,9 @@ All logic lives in `src/App.tsx` (single-component architecture):
 
 | Problem | Fix |
 |---------|-----|
-| Blank page | Check browser console; ensure no runtime errors in `App.tsx` |
-| 404 on API calls | Confirm backend is running on port 8000 and all endpoints exist |
-| CORS errors | Set `ALLOWED_ORIGINS=http://localhost:5173` in backend `.env` |
-| Clarification dialog never shows | Backend `ORCHESTRATOR_MODEL` must be accessible; check OPENAI_API_KEY |
-| History panel empty | Backend must be running and Postgres accessible; at least one completed run needed |
-| Export bar never appears | Verify `[DONE]` SSE event is being received in browser Network tab |
+| Blank page | Open the browser console — there is likely a runtime error in `App.tsx` |
+| 404 on API calls | Make sure the backend is running on port 8000 |
+| CORS errors | Set `ALLOWED_ORIGINS=http://localhost:5173` in the backend `.env` |
+| Clarification dialog never shows | Check that `OPENAI_API_KEY` is set in the backend environment |
+| History panel is empty | The backend needs Postgres running and at least one completed research run |
+| Export buttons never appear | Check the browser Network tab — verify that a `[DONE]` SSE event is being received |
